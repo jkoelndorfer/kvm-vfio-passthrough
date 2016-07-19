@@ -1,0 +1,50 @@
+#!/bin/bash
+
+# Taken and adapted from:
+# https://www.redhat.com/archives/vfio-users/2016-July/msg00066.html
+
+VM_NAME='windows8'
+VM_CPUS='2-11'
+VM_IP='10.0.0.66'
+HUGEPAGES=16
+LOGGED_IN_USER="$(who | grep -E '\(:[0-9]+\)' | awk '{ print $1 }' | head -n 1)"
+
+if [ "$(virsh domstate $VM_NAME)" = "running" ]
+then
+  echo "VM $VM_NAME already running"
+  exit 1
+fi
+
+# drop caches and compact memory to free up continuous memory for huge pages
+echo 3 > /proc/sys/vm/drop_caches
+echo 1 > /proc/sys/vm/compact_memory
+
+echo $HUGEPAGES > /proc/sys/vm/nr_hugepages
+ALLOC_PAGES="$(cat /proc/sys/vm/nr_hugepages)"
+
+if [[ "$ALLOC_PAGES" != "$HUGEPAGES" ]]; then
+  echo 'Not able to allocate hugepages'
+  echo 0 > /proc/sys/vm/nr_hugepages
+  exit 1
+fi
+
+# Maximum Powah!
+echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
+
+# THP can allegedly result in OS jitter. Better keep it off.
+echo 'never' > /sys/kernel/mm/transparent_hugepage/enabled
+
+su --login "$LOGGED_IN_USER" --command "/usr/bin/synergyc $VM_IP" > /dev/null &
+
+virsh start "$VM_NAME"
+
+sleep 10
+while [[ "$(virsh domstate $VM_NAME)" = 'running' ]]; do
+  sleep 1
+done
+
+pkill --uid "$LOGGED_IN_USER" --signal SIGINT synergyc
+
+echo 'powersave' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
+
+echo 0 > /proc/sys/vm/nr_hugepages
