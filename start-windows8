@@ -8,12 +8,22 @@ VM_CPUS='2-11'
 VM_IP='10.0.0.66'
 HUGEPAGES=16
 LOGGED_IN_USER="$(who | grep -E '\(:[0-9]+\)' | awk '{ print $1 }' | head -n 1)"
+PRIMARY_DISPLAY='DVI-I-1'
+VM_DISPLAY='DVI-D-0'
+VM_DISPLAY_POSITION='right-of'
+
+if [[ "$UID" -ne 0 ]]; then
+    echo 'This script must be run as root' >&2
+    exit 1
+fi
 
 if [ "$(virsh domstate $VM_NAME)" = "running" ]
 then
   echo "VM $VM_NAME already running"
-  exit 1
+  exit 2
 fi
+
+xrandr --output "$VM_DISPLAY" --off
 
 # drop caches and compact memory to free up continuous memory for huge pages
 echo 3 > /proc/sys/vm/drop_caches
@@ -38,13 +48,17 @@ su --login "$LOGGED_IN_USER" --command "/usr/bin/synergyc $VM_IP" > /dev/null &
 
 virsh start "$VM_NAME"
 
-sleep 10
-while [[ "$(virsh domstate $VM_NAME)" = 'running' ]]; do
-  sleep 1
-done
+bash >/dev/null 2>&1 <<EOF &
+    sleep 10
+    while [[ "\$(virsh domstate $VM_NAME)" = 'running' ]]; do
+      sleep 1
+    done
 
-pkill --uid "$LOGGED_IN_USER" --signal SIGINT synergyc
+    pkill --uid "$LOGGED_IN_USER" --signal SIGINT synergyc
 
-echo 'powersave' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
+    echo 'powersave' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
 
-echo 0 > /proc/sys/vm/nr_hugepages
+    echo 0 > /proc/sys/vm/nr_hugepages
+    xrandr --output "$VM_DISPLAY" --auto --"$VM_DISPLAY_POSITION" "$PRIMARY_DISPLAY"
+EOF
+disown
