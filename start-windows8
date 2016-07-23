@@ -11,6 +11,7 @@ LOGGED_IN_USER="$(who | grep -E '\(:[0-9]+\)' | awk '{ print $1 }' | head -n 1)"
 PRIMARY_DISPLAY='DVI-I-1'
 VM_DISPLAY='DVI-D-0'
 VM_DISPLAY_POSITION='right-of'
+SYNERGY_CONFIG_PATH="$HOME/.synergy.conf"
 
 if [[ "$UID" -ne 0 ]]; then
     echo 'This script must be run as root' >&2
@@ -44,7 +45,7 @@ echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >
 # THP can allegedly result in OS jitter. Better keep it off.
 echo 'never' > /sys/kernel/mm/transparent_hugepage/enabled
 
-su --login "$LOGGED_IN_USER" --command "/usr/bin/synergyc $VM_IP" > /dev/null &
+su --login "$LOGGED_IN_USER" --command "/usr/bin/synergys -c $SYNERGY_CONFIG_PATH" > /dev/null &
 
 virsh start "$VM_NAME"
 
@@ -54,7 +55,7 @@ bash >/dev/null 2>&1 <<EOF &
       sleep 1
     done
 
-    pkill --uid "$LOGGED_IN_USER" --signal SIGINT synergyc
+    pkill --uid "$LOGGED_IN_USER" --signal SIGINT synergys
 
     echo 'powersave' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
 
