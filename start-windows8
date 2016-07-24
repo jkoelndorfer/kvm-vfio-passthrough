@@ -25,17 +25,23 @@ then
   exit 2
 fi
 
-# drop caches and compact memory to free up continuous memory for huge pages
-echo 3 > /proc/sys/vm/drop_caches
-echo 1 > /proc/sys/vm/compact_memory
+# Note that allocating hugepages after boot has a chance to fail. If continuous memory
+# cannot be allocated, a reboot will be required. Recommended to set hugepages
+# on the kernel command line.
+STARTING_HUGEPAGES="$(cat /proc/sys/vm/nr_hugepages)"
+if [[ "$STARTING_HUGEPAGES" -lt "$HUGEPAGES" ]]; then
+    # drop caches and compact memory to free up continuous memory for huge pages
+    echo 3 > /proc/sys/vm/drop_caches
+    echo 1 > /proc/sys/vm/compact_memory
 
-echo $HUGEPAGES > /proc/sys/vm/nr_hugepages
-ALLOC_PAGES="$(cat /proc/sys/vm/nr_hugepages)"
+    echo "$HUGEPAGES" > /proc/sys/vm/nr_hugepages
+    ALLOC_PAGES="$(cat /proc/sys/vm/nr_hugepages)"
 
-if [[ "$ALLOC_PAGES" != "$HUGEPAGES" ]]; then
-  echo 'Not able to allocate hugepages'
-  echo 0 > /proc/sys/vm/nr_hugepages
-  exit 1
+    if [[ "$ALLOC_PAGES" -lt "$HUGEPAGES" ]]; then
+      echo 'Not able to allocate hugepages'
+      echo "$STARTING_HUGEPAGES" > /proc/sys/vm/nr_hugepages
+      exit 1
+    fi
 fi
 
 xrandr --output "$VM_DISPLAY" --off
@@ -60,7 +66,7 @@ bash >/dev/null 2>&1 <<EOF &
 
     echo 'powersave' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /dev/null
 
-    echo 0 > /proc/sys/vm/nr_hugepages
+    echo "$STARTING_HUGEPAGES" > /proc/sys/vm/nr_hugepages
     xrandr --output "$VM_DISPLAY" --auto --"$VM_DISPLAY_POSITION" "$PRIMARY_DISPLAY"
 EOF
 disown
