@@ -10,7 +10,7 @@ HUGEPAGES=16
 LOGGED_IN_USER="$(who | grep -E '\(:[0-9]+\)' | awk '{ print $1 }' | head -n 1)"
 LOGGED_IN_USER_HOME="$(getent passwd "$LOGGED_IN_USER" | awk -F: '{ print $6 }')"
 PRIMARY_DISPLAY='DVI-I-1'
-VM_DISPLAY='HDMI-0'
+VM_DISPLAY='DVI-D-0'
 VM_DISPLAY_POSITION='right-of'
 SYNERGY_CONFIG_PATH="$LOGGED_IN_USER_HOME/.synergy.conf"
 
