@@ -13,6 +13,7 @@ PRIMARY_DISPLAY='DVI-I-1'
 VM_DISPLAY='DVI-D-0'
 VM_DISPLAY_POSITION='right-of'
 SYNERGY_CONFIG_PATH="$LOGGED_IN_USER_HOME/.synergy.conf"
+VBOX_MODULES="$(echo vbox{pci,net{flt,adp},drv})"
 
 if [[ "$UID" -ne 0 ]]; then
     echo 'This script must be run as root' >&2
@@ -22,6 +23,21 @@ fi
 if [[ "$(virsh domstate $VM_NAME)" == 'running' ]]; then
     echo "VM $VM_NAME already running"
     exit 2
+fi
+
+# Nix VirtualBox modules. These will keep KVM from starting the VM.
+vbox_rc=0
+for m in $VBOX_MODULES; do
+    if lsmod | grep -q "^$m\s"; then
+        if ! rmmod "$m"; then
+            echo "VirtualBox module '$m' could not be unloaded" >&2
+            vbox_rc=1
+        fi
+    fi
+done
+
+if [[ "$vbox_rc" -ne 0 ]]; then
+    exit "$vbox_rc"
 fi
 
 # Note that allocating hugepages after boot has a chance to fail. If continuous memory
