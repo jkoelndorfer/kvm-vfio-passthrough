@@ -19,10 +19,9 @@ if [[ "$UID" -ne 0 ]]; then
     exit 1
 fi
 
-if [ "$(virsh domstate $VM_NAME)" = "running" ]
-then
-  echo "VM $VM_NAME already running"
-  exit 2
+if [[ "$(virsh domstate $VM_NAME)" == 'running' ]]; then
+    echo "VM $VM_NAME already running"
+    exit 2
 fi
 
 # Note that allocating hugepages after boot has a chance to fail. If continuous memory
