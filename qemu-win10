@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# User to run the virtual machine as
+runas="$SUDO_USER"
+runas_user_home="$(getent passwd "$runas" | awk -F: '{ print $6 }')"
+vm_lvm_volume="/dev/mapper/vg--kvm-win10"
+uefi_code_path="/usr/share/edk2/ovmf/OVMF_CODE.fd"
+uefi_vars_path="$runas_user_home/.vfio/ovmf_vars_x64_win10.bin"
+# A floppy image containing VirtIO disk drivers. Needed during the
+# install process for Windows.
+virtio_drivers="$runas_user_home/.vfio/virtio-win_amd64.vfd"
+disk_iso="$runas_user_home/.vfio/en_windows_10_multiple_editions_x64_dvd_6846432.iso"
+
+# PCI bus IDs from /sys/bus/pci/devices or `lspci -D`
+vfio_gpu_device='0000:01:00.0'
+vfio_gpu_audio='0000:01:00.1'
+vfio_usb_device='0000:05:00.0'
+
+if rmmod nvidia_drm nvidia_modeset nvidia 2>&1 | grep -q 'in use'; then
+    echo 'Failed to remove NVIDIA kernel modules, is the GPU in use?' >&2
+    exit 1
+fi
+if ! lsmod | grep -q vfio_pci; then
+    for dev in $vfio_gpu_device $vfio_gpu_audio $vfio_usb_device; do
+        device_dir="/sys/bus/pci/devices/$dev"
+        unbind_file="${device_dir}/driver/unbind"
+        [[ -f "$unbind_file" ]] && echo "$dev" > "$unbind_file"
+        echo 'vfio-pci' > "${device_dir}/driver_override"
+    done
+    modprobe vfio_pci
+fi
+
+for arg in '-t' '-f' '-d' '-s' '-c' '-m' '-u' '-l' '-v' '-x'; do
+    ulimit $arg unlimited
+done
+
+function default_boot {
+    qemu-system-x86_64 \
+        -name win10 \
+        -nodefaults \
+        -nodefconfig \
+        -no-user-config \
+        -boot d \
+        -runas "$runas" \
+        -cpu host,kvm=off,hv_vapic,hv_time,hv_relaxed,hv_spinlocks=0x1fff,hv_vendor_id=SuckItNvidia \
+        -smp cpus=8,sockets=1,cores=4,threads=2 \
+        -enable-kvm \
+        -machine q35,accel=kvm,mem-merge=off \
+        -m 16384 \
+        -mem-path /dev/hugepages \
+        -mem-prealloc \
+        -realtime mlock=on \
+        -rtc base=localtime,clock=host,driftfix=none \
+        -drive file=$uefi_code_path,if=pflash,format=raw,readonly=on \
+        -drive file=$uefi_vars_path,if=pflash,format=raw \
+        -vga none \
+        -nographic \
+        -serial none \
+        -parallel none \
+        -balloon none \
+        -device vfio-pci,host=$vfio_gpu_device \
+        -device vfio-pci,host=$vfio_gpu_audio \
+        -device vfio-pci,host=$vfio_usb_device \
+        -drive file="$vm_lvm_volume",if=none,format=raw,cache=none,id=disk0 \
+        -device virtio-blk-pci,scsi=off,drive=disk0,id=virtio-disk0,bootindex=1 \
+        \
+        -device ahci,id=ahci \
+        -drive file="$disk_iso",if=none,format=raw,cache=none,id=cdrom,readonly=on \
+        -device ide-cd,bus=ahci.1,drive=cdrom,id=sata-cdrom \
+        -net none
+}
+
+default_boot
